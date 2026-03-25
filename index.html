@@ -1455,58 +1455,81 @@
 </body>
 </html>
 <script>
-// ── LIVE DATA FETCH ──────────────────────────────────────────────────────────
+  // ── LIVE DATA FETCH (FIXED v2) ─────────────────────────────────────────────
+// Fixes: correct Netlify function URLs + correct data slot mapping
 async function fetchLiveData() {
+
+  // ── SHOPIFY ────────────────────────────────────────────────────────────────
   try {
-    // Shopify
-    const shopRes = await fetch('/api/shopify');
+    const shopRes = await fetch('/.netlify/functions/shopify');
     if (shopRes.ok) {
       const shop = await shopRes.json();
       if (!shop.error) {
-        // Update metrics bar
-        document.querySelectorAll('.metric-val')[0].textContent = '₹' + Number(shop.today_revenue).toLocaleString('en-IN', {maximumFractionDigits:0});
-        document.querySelectorAll('.metric-val')[3].textContent = shop.today_orders;
-        // Update KPI card
+
+        // metrics-bar: index 1 = Today's Revenue, index 3 = Orders Today
+        const metricVals = document.querySelectorAll('.metric-val');
+        metricVals[1].textContent = '₹' + Number(shop.today_revenue)
+          .toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        metricVals[1].style.color = 'var(--green)';
+        metricVals[3].textContent = shop.today_orders;
+
+        // KPI card: index 2 = Shopify Revenue card
         const shopifyKPI = document.querySelectorAll('.kpi-value')[2];
         if (shopifyKPI) {
-          shopifyKPI.textContent = '₹' + Number(shop.today_revenue).toLocaleString('en-IN', {maximumFractionDigits:0});
-          shopifyKPI.closest('.kpi-card').querySelector('.kpi-change').innerHTML = '<span class="up">▲ ' + shop.today_orders + ' orders today</span>';
+          shopifyKPI.textContent = '₹' + Number(shop.today_revenue)
+            .toLocaleString('en-IN', { maximumFractionDigits: 0 });
+          shopifyKPI.closest('.kpi-card').querySelector('.kpi-change').innerHTML =
+            '<span class="up">▲ ' + shop.today_orders + ' orders today</span>';
         }
-        // Update customers section
-        const custEl = document.querySelector('.kpi-value');
-        if (custEl) custEl.textContent = Number(shop.total_customers).toLocaleString('en-IN');
-        // Update top products if on customers page
+
+        // Customers section: first kpi-value inside #section-customers only
+        const custSection = document.querySelector('#section-customers');
+        if (custSection) {
+          const custKPI = custSection.querySelector('.kpi-value');
+          if (custKPI) custKPI.textContent =
+            Number(shop.total_customers).toLocaleString('en-IN');
+        }
+
+        // Top products → pincode revenue slots
         const pincodeItems = document.querySelectorAll('.pincode-revenue');
         if (shop.top_products && pincodeItems.length) {
           shop.top_products.forEach((p, i) => {
-            if (pincodeItems[i]) pincodeItems[i].textContent = '₹' + Number(p.revenue).toLocaleString('en-IN', {maximumFractionDigits:0});
+            if (pincodeItems[i]) pincodeItems[i].textContent =
+              '₹' + Number(p.revenue).toLocaleString('en-IN', { maximumFractionDigits: 0 });
           });
         }
+
         console.log('✅ Shopify data loaded:', shop);
       }
     }
-  } catch(e) { console.log('Shopify fetch:', e.message); }
+  } catch (e) { console.log('Shopify fetch error:', e.message); }
 
+
+  // ── CLOUDFLARE ─────────────────────────────────────────────────────────────
   try {
-    // Cloudflare
-    const cfRes = await fetch('/api/cloudflare');
+    const cfRes = await fetch('/.netlify/functions/cloudflare');
     if (cfRes.ok) {
       const cf = await cfRes.json();
       if (!cf.error) {
-        // Bot threats metric
-        document.querySelectorAll('.metric-val')[4].textContent = cf.threats_total || 0;
-        document.querySelectorAll('.metric-val')[4].style.color = cf.threats_total > 0 ? 'var(--red)' : 'var(--green)';
-        // Active sessions
-        document.querySelectorAll('.metric-val')[5].textContent = Number(cf.unique_visitors).toLocaleString('en-IN');
-        // Security KPI
+
+        const metricVals = document.querySelectorAll('.metric-val');
+
+        // metrics-bar: index 4 = Bot Threats, index 5 = Active Sessions
+        metricVals[4].textContent = cf.threats_total || 0;
+        metricVals[4].style.color = (cf.threats_total > 0) ? 'var(--red)' : 'var(--green)';
+        metricVals[5].textContent = Number(cf.unique_visitors).toLocaleString('en-IN');
+
+        // Security section KPI cards
         const secKPIs = document.querySelectorAll('#section-security .kpi-value');
         if (secKPIs[0]) secKPIs[0].textContent = cf.threats_total || 0;
-        if (secKPIs[1]) secKPIs[1].textContent = cf.active_waf_rules || 0;
-        // Populate threat feed
+        if (secKPIs[1]) secKPIs[1].textContent = cf.active_waf_rules || 9;
+        if (secKPIs[2]) secKPIs[2].textContent = cf.requests_total || 0;
+
+        // Live threat feed
         if (cf.recent_threats && cf.recent_threats.length > 0) {
           const threatList = document.querySelector('#section-security .threat-list');
           if (threatList) {
-            const liveThreats = cf.recent_threats.slice(0, 5).map(t => `
+            threatList.innerHTML = cf.recent_threats.slice(0, 5).map(t => `
               <div class="threat-item high">
                 <div class="threat-icon">🤖</div>
                 <div>
@@ -1514,82 +1537,92 @@ async function fetchLiveData() {
                   <div class="threat-time">${t.rule} · ${new Date(t.time).toLocaleTimeString('en-IN')}</div>
                 </div>
               </div>`).join('');
-            threatList.innerHTML = liveThreats;
           }
         }
+
         console.log('✅ Cloudflare data loaded:', cf);
       }
     }
-  } catch(e) { console.log('Cloudflare fetch:', e.message); }
+  } catch (e) { console.log('Cloudflare fetch error:', e.message); }
 
+
+  // ── META ADS ───────────────────────────────────────────────────────────────
   try {
-    // Meta Ads
-    const metaRes = await fetch('/api/meta');
+    const metaRes = await fetch('/.netlify/functions/meta');
     if (metaRes.ok) {
       const meta = await metaRes.json();
       if (!meta.error && meta.today) {
-        // Spend metric
-        const spendEl = document.querySelectorAll('.metric-val')[0];
-        const currentSpend = parseFloat(meta.today.spend || 0);
-        // Meta KPI card
+
+        const metricVals = document.querySelectorAll('.metric-val');
+        const metaSpend = parseFloat(meta.today.spend || 0);
+
+        // metrics-bar: index 0 = Today's Spend (ads only, NOT Shopify revenue)
+        metricVals[0].textContent = '₹' + Number(metaSpend)
+          .toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+        // KPI card: index 1 = Meta Ads ROAS card
         const metaKPI = document.querySelectorAll('.kpi-value')[1];
-        if (metaKPI && meta.today.roas) {
-          metaKPI.textContent = meta.today.roas + 'x';
+        if (metaKPI) {
+          const roas = meta.today.roas;
+          metaKPI.textContent = roas ? Number(roas).toFixed(2) + 'x' : '—';
           metaKPI.closest('.kpi-card').querySelector('.kpi-change').innerHTML =
-            '<span>Spend: ₹' + Number(meta.today.spend).toLocaleString('en-IN', {maximumFractionDigits:0}) + ' today</span>';
+            '<span>Spend: ₹' + Number(metaSpend).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' today</span>';
         }
-        // Update spend bar - combine with any Google spend
-        if (currentSpend > 0) {
-          const totalSpend = currentSpend;
-          document.querySelectorAll('.metric-val')[0].textContent = '₹' + Number(totalSpend).toLocaleString('en-IN', {maximumFractionDigits:0});
-        }
-        // Update campaigns section
-        if (meta.active_campaigns && meta.active_campaigns.length > 0) {
+
+        // Active campaigns → campaigns table
+        if (meta.last_30_days && meta.last_30_days.active_campaigns &&
+            meta.last_30_days.active_campaigns.length > 0) {
           const tbody = document.querySelector('#section-campaigns table tbody');
           if (tbody) {
-            const rows = meta.active_campaigns.map(c => `
+            const rows = meta.last_30_days.active_campaigns.map(c => `
               <tr>
-                <td><div style="font-weight:600">${c.name}</div><div style="font-size:10px;color:var(--muted)">${c.objective || 'Meta campaign'}</div></td>
+                <td>
+                  <div style="font-weight:600">${c.name}</div>
+                  <div style="font-size:10px;color:var(--muted)">${c.objective || 'Meta campaign'}</div>
+                </td>
                 <td><span class="tag tag-meta">Meta</span></td>
                 <td>${c.daily_budget ? '₹' + Number(c.daily_budget).toLocaleString('en-IN', {maximumFractionDigits:0}) + '/day' : '—'}</td>
                 <td>—</td>
-                <td><div class="roas-bar"><span>${meta.today.roas ? meta.today.roas + 'x' : '—'}</span></div></td>
+                <td><div class="roas-bar"><span>${meta.today.roas ? Number(meta.today.roas).toFixed(2) + 'x' : '—'}</span></div></td>
                 <td><span class="status-pill active">● Active</span></td>
                 <td><button class="btn btn-secondary" style="font-size:10px;padding:4px 8px">⏸ Pause</button></td>
               </tr>`).join('');
-            // Append to existing rows
             tbody.innerHTML += rows;
           }
         }
+
         console.log('✅ Meta data loaded:', meta);
       }
     }
-  } catch(e) { console.log('Meta fetch:', e.message); }
+  } catch (e) { console.log('Meta fetch error:', e.message); }
 
-  // Calculate blended ROAS
+
+  // ── BLENDED ROAS ───────────────────────────────────────────────────────────
   try {
-    const roasEl = document.querySelectorAll('.metric-val')[2];
-    const spendText = document.querySelectorAll('.metric-val')[0].textContent.replace('₹','').replace(/,/g,'');
-    const revenueText = document.querySelectorAll('.metric-val')[1].textContent.replace('₹','').replace(/,/g,'');
-    const spend = parseFloat(spendText) || 0;
-    const revenue = parseFloat(revenueText) || 0;
+    const metricVals = document.querySelectorAll('.metric-val');
+    const spend   = parseFloat(metricVals[0].textContent.replace('₹','').replace(/,/g,'')) || 0;
+    const revenue = parseFloat(metricVals[1].textContent.replace('₹','').replace(/,/g,'')) || 0;
+    const roasEl  = metricVals[2];
     if (spend > 0 && revenue > 0) {
-      roasEl.textContent = (revenue / spend).toFixed(2) + 'x';
-      roasEl.style.color = (revenue/spend) >= 3 ? 'var(--green)' : (revenue/spend) >= 1.5 ? 'var(--accent)' : 'var(--red)';
+      const roas = revenue / spend;
+      roasEl.textContent = roas.toFixed(2) + 'x';
+      roasEl.style.color = roas >= 3 ? 'var(--green)' : roas >= 1.5 ? 'var(--accent)' : 'var(--red)';
+    } else {
+      roasEl.textContent = '—';
     }
-  } catch(e) {}
+  } catch (e) {}
 }
 
-// Run immediately and every 5 minutes
+// Run on load, then every 5 minutes
 fetchLiveData();
 setInterval(fetchLiveData, 5 * 60 * 1000);
 
-// Show last refresh time
+// Update subtitle with last-refresh time every 60s
 setInterval(() => {
-  const el = document.querySelector('.page-sub');
-  if (el && el.textContent.includes('alphonsomango')) {
-    const now = new Date().toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata'});
+  const el = document.querySelector('#section-dashboard .page-sub');
+  if (el) {
+    const now = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
     el.textContent = 'alphonsomango.in · Last updated: ' + now + ' IST';
   }
 }, 60000);
-</script>
+</script>  
